@@ -1,0 +1,680 @@
+""" 
+Archivo: BlackJack_Tarea5.py 
+
+Descripción: BLACKJACK - Jugador contra la banca
+
+Autor: Gálvez Huez Luis Fernando & Lopez Reyes Luis Alexandro
+
+Fecha: 7/11/2026
+
+"""
+
+import pygame
+import random
+import sys
+
+pygame.init()
+
+ANCHO = 1000
+ALTO = 720
+PANTALLA = pygame.display.set_mode((ANCHO, ALTO))
+pygame.display.set_caption("Blackjack - Jugador contra la banca")
+RELOJ = pygame.time.Clock()
+
+# Colores
+
+VERDE_FONDO = (13, 75, 55)
+VERDE_PANEL = (18, 91, 66)
+VERDE_OSCURO = (8, 48, 37)
+BLANCO = (245, 245, 238)
+NEGRO = (25, 25, 25)
+ROJO = (190, 35, 45)
+DORADO = (230, 190, 95)
+GRIS = (185, 190, 190)
+AZUL_CARTA = (35, 65, 130)
+
+# Fuentes
+
+FUENTE_TITULO = pygame.font.SysFont("arial", 36, bold=True)
+FUENTE_SUBTITULO = pygame.font.SysFont("arial", 18)
+FUENTE_NORMAL = pygame.font.SysFont("arial", 23)
+FUENTE_PEQUENA = pygame.font.SysFont("arial", 17)
+FUENTE_RANGO = pygame.font.SysFont("arial", 25, bold=True)
+FUENTE_PALO = pygame.font.SysFont("segoeuisymbol", 43)
+FUENTE_BOTON = pygame.font.SysFont("arial", 21, bold=True)
+
+# Datos de las cartas
+
+RANGOS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
+PALOS = ["♥", "♦", "♣", "♠"]
+
+# Diseño del boton del juego
+class Boton:
+    """
+    Botón rectangular clicable que se dibuja en la pantalla de pygame.
+
+    Atributos:
+        rect (pygame.Rect): Área rectangular que ocupa el botón.
+        texto (str): Texto que se muestra en el centro del botón.
+    """
+
+    def __init__(self, x, y, ancho, alto, texto):
+        """
+        Crea un botón con su posición, tamaño y texto.
+
+        Parámetros:
+            x (int): Coordenada horizontal de la esquina superior izquierda.
+            y (int): Coordenada vertical de la esquina superior izquierda.
+            ancho (int): Ancho del botón en píxeles.
+            alto (int): Alto del botón en píxeles.
+            texto (str): Texto que mostrará el botón.
+
+        Valor de retorno:
+            None: Es un constructor, solo inicializa el objeto.
+
+        Excepciones:
+            TypeError: Si x, y, ancho o alto no son números (lo lanza pygame.Rect).
+
+        Ejemplos:
+            >>> boton = Boton(455, 645, 155, 48, "PEDIR CARTA")   # correcto
+            >>> boton = Boton("a", 645, 155, 48, "PEDIR CARTA")   # error: TypeError
+        """
+        self.rect = pygame.Rect(x, y, ancho, alto)
+        self.texto = texto
+
+    def dibujar(self, superficie, habilitado=True):
+        """
+        Dibuja el botón en la superficie indicada.
+
+        Descripción detallada:
+            El color cambia según el estado: gris si está deshabilitado,
+            dorado claro si el ratón está encima y dorado oscuro en reposo.
+            Después dibuja el borde y el texto centrado.
+
+        Parámetros:
+            superficie (pygame.Surface): Superficie donde se dibuja el botón.
+            habilitado (bool): True si el botón está activo, False si debe
+                verse deshabilitado. Por defecto es True.
+
+        Valor de retorno:
+            None: Solo dibuja en pantalla.
+
+        Excepciones:
+            AttributeError: Si "superficie" no es una superficie válida de pygame.
+
+        Ejemplos:
+            >>> BOTON_PEDIR.dibujar(PANTALLA, habilitado=True)   # correcto
+            >>> BOTON_PEDIR.dibujar(None)                        # error: AttributeError
+        """
+        raton = pygame.mouse.get_pos()
+        if not habilitado:
+            color = (85, 91, 88)
+        elif self.rect.collidepoint(raton):
+            color = (210, 166, 75)
+        else:
+            color = (172, 126, 48)
+
+        pygame.draw.rect(superficie, color, self.rect, border_radius=10)
+        pygame.draw.rect(superficie, DORADO, self.rect, 2, border_radius=10)
+        texto = FUENTE_BOTON.render(self.texto, True, BLANCO)
+        superficie.blit(texto, texto.get_rect(center=self.rect.center))
+
+    def fue_presionado(self, posicion):
+        """
+        Indica si una posición del ratón cae dentro del botón.
+
+        Parámetros:
+            posicion (tuple[int, int]): Coordenadas (x, y) del clic.
+
+        Valor de retorno:
+            bool: True si la posición está dentro del botón, False si no.
+
+        Excepciones:
+            TypeError: Si "posicion" no es una pareja de números.
+
+        Ejemplos:
+            >>> BOTON_PEDIR.fue_presionado((500, 660))   # correcto -> True
+            >>> BOTON_PEDIR.fue_presionado(500)          # error: TypeError
+        """
+        return self.rect.collidepoint(posicion)
+
+BOTON_PEDIR = Boton(455, 645, 155, 48, "PEDIR CARTA")
+BOTON_PLANTARSE = Boton(625, 645, 155, 48, "PLANTARSE")
+BOTON_NUEVO = Boton(795, 645, 155, 48, "NUEVO JUEGO")
+
+# Variables
+mazo = []
+mano_jugador = []
+mano_banca = []
+estado = "jugando"  
+mensaje = "Tu turno: pide una carta o plántate."
+
+def crear_mazo():
+    """
+    Crea y mezcla una baraja estándar de 52 cartas.
+
+    Descripción detallada:
+        Combina cada rango de RANGOS con cada palo de PALOS para formar
+        las 52 cartas y luego las mezcla aleatoriamente.
+
+    Parámetros:
+        Ninguno.
+
+    Valor de retorno:
+        list[tuple[str, str]]: Lista de 52 cartas, cada una como una tupla
+        (rango, palo), por ejemplo ("A", "♠").
+
+    Excepciones:
+        Ninguna.
+
+    Ejemplos:
+        >>> len(crear_mazo())    # correcto
+        52
+        >>> crear_mazo(5)        # error: TypeError (la función no recibe parámetros)
+    """
+    cartas = [(rango, palo) for rango in RANGOS for palo in PALOS]
+    random.shuffle(cartas)
+    return cartas
+
+def tomar_carta(mano):
+    """
+    Toma una carta del mazo y la agrega a la mano indicada.
+
+    Descripción detallada:
+        Usa la variable global "mazo". Si el mazo está vacío no hace nada.
+
+    Parámetros:
+        mano (list[tuple[str, str]]): Mano (del jugador o de la banca) a la
+            que se agregará la carta.
+
+    Valor de retorno:
+        None: Modifica la lista "mano" directamente.
+
+    Excepciones:
+        AttributeError: Si "mano" no es una lista y el mazo tiene cartas.
+
+    Ejemplos:
+        >>> tomar_carta(mano_jugador)   # correcto: la mano gana una carta
+        >>> tomar_carta(None)           # error: AttributeError
+    """
+    if mazo:
+        mano.append(mazo.pop())
+
+def valor_carta(carta):
+    """
+    Devuelve el valor inicial de una carta. El As comienza valiendo 11.
+
+    Descripción detallada:
+        El As vale 11, las figuras (J, Q, K) valen 10 y las demás cartas
+        valen su número. El ajuste del As a 1 se hace en calcular_puntos().
+
+    Parámetros:
+        carta (tuple[str, str]): Carta en formato (rango, palo).
+
+    Valor de retorno:
+        int: Valor de la carta (de 2 a 11).
+
+    Excepciones:
+        ValueError: Si el rango no es un número ni A, J, Q o K.
+
+    Ejemplos:
+        >>> valor_carta(("K", "♠"))   # correcto
+        10
+        >>> valor_carta(("X", "♥"))   # error: ValueError
+    """
+    rango = carta[0]
+    if rango == "A":
+        return 11
+    if rango in ("K", "Q", "J"):
+        return 10
+    return int(rango)
+
+def calcular_puntos(mano):
+    """
+    Calcula la mano haciendo que los Ases valgan 11 o 1 segun los puntos de la mano.
+
+    Descripción detallada:
+        Suma todas las cartas con el As valiendo 11. Mientras el total pase
+        de 21 y todavía haya Ases contados como 11, resta 10 por cada uno
+        (el As pasa a valer 1).
+
+    Parámetros:
+        mano (list[tuple[str, str]]): Lista de cartas de la mano.
+
+    Valor de retorno:
+        int: Puntos totales de la mano (puede ser mayor a 21 si se pasó).
+
+    Excepciones:
+        ValueError: Si alguna carta tiene un rango inválido.
+
+    Ejemplos:
+        >>> calcular_puntos([("A", "♠"), ("K", "♥")])   # correcto
+        21
+        >>> calcular_puntos([("Z", "♠")])               # error: ValueError
+    """
+    puntos = sum(valor_carta(carta) for carta in mano)
+    ases = sum(1 for carta in mano if carta[0] == "A")
+
+    while puntos > 21 and ases > 0:
+        puntos -= 10
+        ases -= 1
+
+    return puntos
+
+def es_blackjack_natural(mano):
+    """
+    Indica si la mano es un blackjack natural.
+
+    Descripción detallada:
+        Un blackjack natural es una mano de exactamente 2 cartas que suma 21
+        (un As más una carta de valor 10).
+
+    Parámetros:
+        mano (list[tuple[str, str]]): Lista de cartas de la mano.
+
+    Valor de retorno:
+        bool: True si la mano tiene 2 cartas y suma 21, False en otro caso.
+
+    Excepciones:
+        ValueError: Si alguna carta tiene un rango inválido.
+
+    Ejemplos:
+        >>> es_blackjack_natural([("A", "♠"), ("K", "♥")])   # correcto -> True
+        >>> es_blackjack_natural([("A", "♠"), ("K", "♥"), ("5", "♦")])
+        False    # 3 cartas: no es natural
+        >>> es_blackjack_natural([("Z", "♠"), ("K", "♥")])   # error: ValueError
+    """
+    return len(mano) == 2 and calcular_puntos(mano) == 21
+
+def terminar_partida(texto):
+    """
+    Marca la partida como terminada y guarda el mensaje final.
+
+    Parámetros:
+        texto (str): Mensaje con el resultado que se mostrará en pantalla.
+
+    Valor de retorno:
+        None: Modifica las variables globales "estado" y "mensaje".
+
+    Excepciones:
+        Ninguna.
+
+    Ejemplos:
+        >>> terminar_partida("¡Ganaste!")   # correcto: estado = "terminado"
+    """
+    global estado, mensaje
+    estado = "terminado"
+    mensaje = texto
+
+def iniciar_juego():
+    """
+    Reinicia el mazo y reparte dos cartas a cada participante.
+
+    Descripción detallada:
+        Crea un mazo nuevo, vacía las manos, reparte una carta alternando
+        entre jugador y banca (dos rondas) y revisa si alguno tiene
+        blackjack natural. Si lo hay, termina la partida de inmediato.
+
+    Parámetros:
+        Ninguno.
+
+    Valor de retorno:
+        None: Modifica las variables globales del juego.
+
+    Excepciones:
+        Ninguna.
+
+    Ejemplos:
+        >>> iniciar_juego()     # correcto: cada mano queda con 2 cartas
+        >>> iniciar_juego(1)    # error: TypeError (no recibe parámetros)
+    """
+    global mazo, mano_jugador, mano_banca, estado, mensaje
+
+    mazo = crear_mazo()
+    mano_jugador = []
+    mano_banca = []
+    estado = "jugando"
+    mensaje = "Tu turno: pide una carta o plántate."
+
+    # Reparto inicial
+    tomar_carta(mano_jugador)
+    tomar_carta(mano_banca)
+    tomar_carta(mano_jugador)
+    tomar_carta(mano_banca)
+
+    jugador_blackjack = es_blackjack_natural(mano_jugador)
+    banca_blackjack = es_blackjack_natural(mano_banca)
+
+    # Se revisa si hay algun blackjack natural al iniciar la partida.
+    if jugador_blackjack and banca_blackjack:
+        terminar_partida("¡Empate! Ambos tienen blackjack natural.")
+    elif jugador_blackjack:
+        terminar_partida("¡Blackjack natural! ¡Ganaste la partida!")
+    elif banca_blackjack:
+        terminar_partida("La banca tiene blackjack natural. Gana la banca.")
+
+def turno_banca():
+    """
+    La banca pide cartas obligatoriamente mientras tenga menos de 17.
+
+    Descripción detallada:
+        Cuando la banca llega a 17 o más se planta. Después compara los
+        puntos con los del jugador y termina la partida con el mensaje
+        del resultado (la banca se pasó, ganó el jugador, ganó la banca
+        o empate).
+
+    Parámetros:
+        Ninguno.
+
+    Valor de retorno:
+        None: Modifica las manos y el estado global del juego.
+
+    Excepciones:
+        Ninguna.
+
+    Ejemplos:
+        >>> turno_banca()     # correcto: la partida termina con un resultado
+        >>> turno_banca(1)    # error: TypeError (no recibe parámetros)
+    """
+    global mensaje
+
+    while calcular_puntos(mano_banca) < 17:
+        tomar_carta(mano_banca)
+
+    puntos_jugador = calcular_puntos(mano_jugador)
+    puntos_banca = calcular_puntos(mano_banca)
+
+    if puntos_banca > 21:
+        terminar_partida(f"¡La banca se pasó! Ganaste con {puntos_jugador} puntos.")
+    elif puntos_jugador > puntos_banca:
+        terminar_partida(f"¡Ganaste! Tú: {puntos_jugador} | Banca: {puntos_banca}.")
+    elif puntos_jugador < puntos_banca:
+        terminar_partida(f"Gana la banca. Tú: {puntos_jugador} | Banca: {puntos_banca}.")
+    else:
+        terminar_partida(f"¡Empate! Ambos terminaron con {puntos_jugador} puntos.")
+
+def pedir_carta():
+    """
+    Acción del jugador para pedir una carta.
+
+    Descripción detallada:
+        Solo funciona si la partida sigue en curso. Agrega una carta a la
+        mano del jugador y revisa el resultado: si se pasa de 21 pierde, si
+        llega a 21 le toca el turno a la banca y si no, el juego continúa.
+
+    Parámetros:
+        Ninguno.
+
+    Valor de retorno:
+        None: Modifica las variables globales del juego.
+
+    Excepciones:
+        Ninguna.
+
+    Ejemplos:
+        >>> pedir_carta()    # correcto: la mano del jugador gana una carta
+        >>> pedir_carta()    # con la partida terminada no hace nada (no hay error)
+    """
+    global mensaje
+
+    if estado != "jugando":
+        return
+
+    tomar_carta(mano_jugador)
+    puntos = calcular_puntos(mano_jugador)
+
+    if puntos > 21:
+        terminar_partida(f"Te pasaste con {puntos} puntos. ¡Gana la banca!")
+    elif puntos == 21:
+        mensaje = "Tienes 21 puntos. Tu turno terminó."
+        turno_banca()
+    else:
+        mensaje = f"Tienes {puntos} puntos. ¿Pides otra carta o te plantas?"
+
+def plantarse():
+    """
+    Termina el turno del jugador y comienza el turno de la banca.
+
+    Descripción detallada:
+        Solo tiene efecto si la partida sigue en curso; en caso contrario
+        no hace nada.
+
+    Parámetros:
+        Ninguno.
+
+    Valor de retorno:
+        None: Llama a turno_banca() y modifica el estado global.
+
+    Excepciones:
+        Ninguna.
+
+    Ejemplos:
+        >>> plantarse()    # correcto: juega la banca y se muestra el resultado
+        >>> plantarse(1)   # error: TypeError (no recibe parámetros)
+    """
+    if estado == "jugando":
+        turno_banca()
+
+def dibujar_texto(texto, fuente, color, x, y, centrado=False):
+    """
+    Dibuja un texto en la pantalla principal.
+
+    Parámetros:
+        texto (str): Texto que se va a mostrar.
+        fuente (pygame.font.Font): Fuente con la que se dibuja el texto.
+        color (tuple[int, int, int]): Color RGB del texto.
+        x (int): Coordenada horizontal (esquina superior izquierda o centro).
+        y (int): Coordenada vertical (esquina superior izquierda o centro).
+        centrado (bool): Si es True, (x, y) es el centro del texto; si es
+            False, es su esquina superior izquierda. Por defecto es False.
+
+    Valor de retorno:
+        None: Solo dibuja en pantalla.
+
+    Excepciones:
+        AttributeError: Si "fuente" no es una fuente válida de pygame.
+
+    Ejemplos:
+        >>> dibujar_texto("Hola", FUENTE_NORMAL, BLANCO, 50, 50)   # correcto
+        >>> dibujar_texto("Hola", None, BLANCO, 50, 50)            # error: AttributeError
+    """
+    imagen = fuente.render(texto, True, color)
+    rect = imagen.get_rect()
+    if centrado:
+        rect.center = (x, y)
+    else:
+        rect.topleft = (x, y)
+    PANTALLA.blit(imagen, rect)
+
+# Diseño de la carta
+def dibujar_carta(x, y, carta, oculta=False):
+    """
+    Dibuja una carta de la baraja en la pantalla.
+
+    Descripción detallada:
+        Si la carta está oculta se dibuja el reverso (azul con borde
+        dorado). Si no, se dibuja el frente con el rango en la esquina y
+        el palo al centro; rojo para corazones y diamantes, negro para
+        tréboles y picas.
+
+    Parámetros:
+        x (int): Coordenada horizontal de la esquina superior izquierda.
+        y (int): Coordenada vertical de la esquina superior izquierda.
+        carta (tuple[str, str]): Carta en formato (rango, palo).
+        oculta (bool): True para dibujar el reverso de la carta. Por
+            defecto es False.
+
+    Valor de retorno:
+        None: Solo dibuja en pantalla.
+
+    Excepciones:
+        ValueError: Si la carta no es una tupla de dos elementos y no está
+            oculta (falla al desempaquetar rango y palo).
+
+    Ejemplos:
+        >>> dibujar_carta(100, 200, ("A", "♠"))              # correcto
+        >>> dibujar_carta(100, 200, ("A", "♠", "extra"))     # error: ValueError
+    """
+    ancho = 76
+    alto = 112
+    rect = pygame.Rect(x, y, ancho, alto)
+
+    pygame.draw.rect(PANTALLA, (5, 35, 27), rect.move(3, 4), border_radius=8)
+
+    if oculta:
+        pygame.draw.rect(PANTALLA, AZUL_CARTA, rect, border_radius=8)
+        pygame.draw.rect(PANTALLA, DORADO, rect, 3, border_radius=8)
+        return
+
+    rango, palo = carta
+    color_palo = ROJO if palo in ("♥", "♦") else NEGRO
+
+    pygame.draw.rect(PANTALLA, BLANCO, rect, border_radius=8)
+    pygame.draw.rect(PANTALLA, (205, 205, 195), rect, 2, border_radius=8)
+
+    texto_rango = FUENTE_RANGO.render(rango, True, color_palo)
+    PANTALLA.blit(texto_rango, (x + 7, y + 5))
+
+    texto_palo = FUENTE_PALO.render(palo, True, color_palo)
+    PANTALLA.blit(texto_palo, texto_palo.get_rect(center=(x + ancho // 2, y + 67)))
+
+    texto_palo_pequeno = FUENTE_PEQUENA.render(palo, True, color_palo)
+    PANTALLA.blit(texto_palo_pequeno, (x + 9, y + 88))
+
+def dibujar_mano(mano, y, ocultar_segunda=False):
+    """
+    Acomoda las cartas horizontalmente y centra la mano en la mesa.
+
+    Descripción detallada:
+        Calcula el espacio entre cartas para que la mano completa quepa en
+        la pantalla (entre 5 y 18 píxeles) y la centra horizontalmente.
+
+    Parámetros:
+        mano (list[tuple[str, str]]): Cartas que se van a dibujar.
+        y (int): Coordenada vertical donde se dibujan las cartas.
+        ocultar_segunda (bool): Si es True, la segunda carta se dibuja
+            boca abajo (se usa para la carta oculta de la banca). Por
+            defecto es False.
+
+    Valor de retorno:
+        None: Solo dibuja en pantalla.
+
+    Excepciones:
+        ValueError: Si alguna carta de la mano tiene un formato inválido.
+
+    Ejemplos:
+        >>> dibujar_mano(mano_jugador, 410)                         # correcto
+        >>> dibujar_mano(mano_banca, 165, ocultar_segunda=True)     # correcto
+        >>> dibujar_mano([("A",)], 410)                             # error: ValueError
+    """
+    ancho_carta = 76
+    espacio = 18
+    cantidad = len(mano)
+
+    if cantidad > 1:
+        espacio = min(18, max(5, (ANCHO - 100 - cantidad * ancho_carta) // (cantidad - 1)))
+
+    ancho_total = cantidad * ancho_carta + max(0, cantidad - 1) * espacio
+    inicio_x = (ANCHO - ancho_total) // 2
+
+    for indice, carta in enumerate(mano):
+        oculta = ocultar_segunda and indice == 1
+        dibujar_carta(inicio_x + indice * (ancho_carta + espacio), y, carta, oculta)
+
+def dibujar_interfaz():
+    """
+    Dibuja toda la interfaz del juego en cada cuadro.
+
+    Descripción detallada:
+        Pinta el fondo, el encabezado, la zona de la banca (con su segunda
+        carta oculta mientras se juega), la zona del jugador con sus
+        puntos, el mensaje de estado y los tres botones.
+
+    Parámetros:
+        Ninguno.
+
+    Valor de retorno:
+        None: Solo dibuja en pantalla.
+
+    Excepciones:
+        Ninguna.
+
+    Ejemplos:
+        >>> dibujar_interfaz()     # correcto
+        >>> dibujar_interfaz(1)    # error: TypeError (no recibe parámetros)
+    """
+    PANTALLA.fill(VERDE_FONDO)
+
+    # Encabezado
+    dibujar_texto("BLACKJACK", FUENTE_TITULO, DORADO, ANCHO // 2, 35, centrado=True)
+    dibujar_texto("Jugador contra la banca", FUENTE_SUBTITULO, BLANCO, ANCHO // 2, 67, centrado=True)
+
+    # Zona de la banca
+    pygame.draw.rect(PANTALLA, VERDE_PANEL, (35, 95, 930, 225), border_radius=18)
+    dibujar_texto("DEALER", FUENTE_NORMAL, BLANCO, 58, 108)
+
+    dibujar_mano(mano_banca, 165, ocultar_segunda=(estado == "jugando"))
+
+    # Zona del jugador
+    pygame.draw.rect(PANTALLA, VERDE_PANEL, (35, 340, 930, 225), border_radius=18)
+    dibujar_texto("TU MANO", FUENTE_NORMAL, BLANCO, 58, 353)
+    dibujar_texto(f"Puntos: {calcular_puntos(mano_jugador)}", FUENTE_PEQUENA, DORADO, 790, 360)
+    dibujar_mano(mano_jugador, 410)
+
+    # Mensaje de estado
+    pygame.draw.rect(PANTALLA, VERDE_OSCURO, (35, 580, 930, 52), border_radius=12)
+    dibujar_texto(mensaje, FUENTE_PEQUENA, BLANCO, ANCHO // 2, 606, centrado=True)
+
+    # Botones
+    BOTON_PEDIR.dibujar(PANTALLA, habilitado=(estado == "jugando"))
+    BOTON_PLANTARSE.dibujar(PANTALLA, habilitado=(estado == "jugando"))
+    BOTON_NUEVO.dibujar(PANTALLA, habilitado=True)
+
+def ejecutar_juego():
+    """
+    Ejecuta el ciclo principal del juego.
+
+    Descripción detallada:
+        Inicia una partida y repite a 60 cuadros por segundo: atiende los
+        eventos (cerrar la ventana y clic izquierdo sobre los botones),
+        dibuja la interfaz y actualiza la pantalla. Al cerrar la ventana
+        termina pygame y el programa.
+
+    Parámetros:
+        Ninguno.
+
+    Valor de retorno:
+        None: No regresa; al final llama a sys.exit().
+
+    Excepciones:
+        SystemExit: Se lanza al cerrar el juego mediante sys.exit().
+
+    Ejemplos:
+        >>> ejecutar_juego()    # correcto: abre la ventana del juego
+        >>> ejecutar_juego(1)   # error: TypeError (no recibe parámetros)
+    """
+    iniciar_juego()
+    ejecutando = True
+
+    while ejecutando:
+        for evento in pygame.event.get():
+            if evento.type == pygame.QUIT:
+                ejecutando = False
+
+            elif evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1:
+                if BOTON_PEDIR.fue_presionado(evento.pos):
+                    pedir_carta()
+                elif BOTON_PLANTARSE.fue_presionado(evento.pos):
+                    plantarse()
+                elif BOTON_NUEVO.fue_presionado(evento.pos):
+                    iniciar_juego()
+
+        dibujar_interfaz()
+        pygame.display.flip()
+        RELOJ.tick(60)
+
+    pygame.quit()
+    sys.exit()
+
+if __name__ == "__main__":
+    ejecutar_juego()
